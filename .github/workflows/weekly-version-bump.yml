@@ -1,0 +1,101 @@
+name: Weekly Version Bump and Docker Build
+
+on:
+  schedule:
+    # 每周日 UTC 02:00 (北京时间周日 10:00) 自动运行
+    - cron: '0 2 * * 0'
+  workflow_dispatch: # 手动触发
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    
+    outputs:
+      new_version: ${{ steps.version.outputs.new_version }}
+      version_changed: ${{ steps.version.outputs.version_changed }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Get current version and calculate new version
+      id: version
+      run: |
+        # 获取最新的版本标签
+        LATEST_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || echo "v1.0.0")
+        
+        if [ -z "$LATEST_TAG" ]; then
+          LATEST_TAG="v1.0.0"
+        fi
+        
+        echo "Latest tag: $LATEST_TAG"
+        
+        # 解析版本号
+        VERSION=${LATEST_TAG#v}
+        MAJOR=$(echo $VERSION | cut -d. -f1)
+        MINOR=$(echo $VERSION | cut -d. -f2)
+        PATCH=$(echo $VERSION | cut -d. -f3)
+        
+        # 增加小版本号
+        NEW_MINOR=$((MINOR + 1))
+        NEW_VERSION="v$MAJOR.$NEW_MINOR.0"
+        
+        echo "New version: $NEW_VERSION"
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "version_changed=true" >> $GITHUB_OUTPUT
+
+    - name: Create and push new tag
+      if: steps.version.outputs.version_changed == 'true'
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        
+        git tag -a ${{ steps.version.outputs.new_version }} -m "Weekly automated version bump to ${{ steps.version.outputs.new_version }}"
+        git push origin ${{ steps.version.outputs.new_version }}
+
+  docker-build:
+    needs: version-bump
+    if: needs.version-bump.outputs.version_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: |
+          ghcr.io/${{ github.repository }}:${{ needs.version-bump.outputs.new_version }}
+          ghcr.io/${{ github.repository }}:latest
+        platforms: linux/amd64
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        labels: |
+          org.opencontainers.image.title=derper-ip
+          org.opencontainers.image.description=Tailscale derper server without domain validation
+          org.opencontainers.image.version=${{ needs.version-bump.outputs.new_version }}
+          org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+          org.opencontainers.image.revision=${{ github.sha }}
+          org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
