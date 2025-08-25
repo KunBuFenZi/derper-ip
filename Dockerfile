@@ -1,8 +1,11 @@
 # 编译
 FROM golang:alpine AS builder
 
-# 切换模块源为中国Go模块代理服务器
-# RUN go env -w GOPROXY=https://goproxy.cn,direct
+# 切换模块源为全球Go代理服务器加速下载
+RUN go env -w GOPROXY=https://proxy.golang.org,direct
+
+# 设置Go编译优化
+RUN go env -w CGO_ENABLED=0
 
 # 拉取代码
 RUN go install tailscale.com/cmd/derper@latest
