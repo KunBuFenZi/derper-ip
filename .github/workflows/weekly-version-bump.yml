@@ -87,8 +87,8 @@ jobs:
         file: ./Dockerfile
         push: true
         tags: |
-          ghcr.io/${{ github.repository_owner }}/derper-ip:${{ needs.version-bump.outputs.new_version }}
-          ghcr.io/${{ github.repository_owner }}/derper-ip:latest
+          ghcr.io/kunbufenzi/derper-ip:${{ needs.version-bump.outputs.new_version }}
+          ghcr.io/kunbufenzi/derper-ip:latest
         platforms: linux/amd64
         cache-from: type=gha
         cache-to: type=gha,mode=max
